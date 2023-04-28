@@ -2,6 +2,7 @@ using System.Text;
 using JwtAuth.Configurations;
 using JwtAuth.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -13,13 +14,17 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// DbContextConfigurations
 
+#region Configurations, Injections
+
+// DbContextConfigurations
 builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Identity Configurations
 
+// Identity Configurations
+builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedEmail = false)
+    .AddEntityFrameworkStores<AppDbContext>();
 
 
 // JWT Configurations
@@ -46,6 +51,9 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+
+
+#endregion
 
 
 var app = builder.Build();

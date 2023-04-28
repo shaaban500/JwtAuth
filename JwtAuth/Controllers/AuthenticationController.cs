@@ -1,7 +1,11 @@
-﻿using JwtAuth.Configurations;
+﻿using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using JwtAuth.Configurations;
 using JwtAuth.DTOs;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
 
 namespace JwtAuth.Controllers
 {
@@ -10,11 +14,11 @@ namespace JwtAuth.Controllers
     public class AuthenticationController : ControllerBase
     {
         private readonly UserManager<IdentityUser> _userManager;
-        private readonly JwtConfig _jwtConfig;
-        public AuthenticationController(JwtConfig jwtConfig, UserManager<IdentityUser> userManager)
+        private readonly IConfiguration _configuration;
+        public AuthenticationController(UserManager<IdentityUser> userManager, IConfiguration configuration)
         {
-            _jwtConfig = jwtConfig;
             _userManager = userManager;
+            _configuration = configuration;
         }
 
 
@@ -52,18 +56,24 @@ namespace JwtAuth.Controllers
                 if(isCreated.Succeeded)
                 {
                     // Generate the token
+                    var token = GenerateJwtToken(newUser);
+
+                    return Ok(new AuthResult()
+                    {
+                        Result = true,
+                        Token = token
+                    });
                 }
+
 
                 return BadRequest(new AuthResult() 
                 {
                     Result = false,
-                    Errors = new List<string>()
-                    {
-                        "Server Error"
-                    }
-                });
+					Errors = isCreated.Errors.Select(e => e.Description).ToList()
+				});
 
             }
+
             return BadRequest();
         }
 
@@ -74,7 +84,31 @@ namespace JwtAuth.Controllers
         // Generate token
         private string GenerateJwtToken(IdentityUser user)
         {
-            return "";
+            var jwtTokenHandler = new JwtSecurityTokenHandler();
+
+            var key = Encoding.UTF8.GetBytes(_configuration.GetSection("JwtConfig:Secret").Value);
+
+            // Token descriptor
+            var tokenDescriptor = new SecurityTokenDescriptor()
+            {
+                Subject = new ClaimsIdentity(new []
+                {
+                    new Claim("Id", user.Id),
+                    new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                    new Claim(JwtRegisteredClaimNames.Email, user.Email),
+					new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+					new Claim(JwtRegisteredClaimNames.Iat, DateTime.Now.ToUniversalTime().ToString())
+
+				}),
+
+                Expires = DateTime.Now.AddHours(1),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256)
+            };
+
+            var token = jwtTokenHandler.CreateToken(tokenDescriptor);
+            var jwtToken = jwtTokenHandler.WriteToken(token);
+
+            return jwtToken;
         }
 
 
