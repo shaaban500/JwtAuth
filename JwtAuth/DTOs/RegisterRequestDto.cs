@@ -1,6 +1,6 @@
 ﻿namespace JwtAuth.DTOs
 {
-    public class RegisterationRequestDto
+    public class RegisterRequestDto
     {
         public string Name { get; set; }
         public string Email { get; set; }

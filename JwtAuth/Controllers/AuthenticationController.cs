@@ -24,12 +24,12 @@ namespace JwtAuth.Controllers
 
         [HttpPost]
         [Route("Register")]
-        public async Task<IActionResult> Register([FromBody] RegisterationRequestDto requestDto)
+        public async Task<IActionResult> Register([FromBody] RegisterRequestDto registerDto)
         {
             // validate incoming request
             if(ModelState.IsValid)
             {
-                var userExist = await _userManager.FindByEmailAsync(requestDto.Email);
+                var userExist = await _userManager.FindByEmailAsync(registerDto.Email);
                 
                 if(userExist != null)
                 {
@@ -46,12 +46,12 @@ namespace JwtAuth.Controllers
                 // create a new user
                 var newUser = new IdentityUser()
                 {
-                    Email = requestDto.Email,
-                    UserName = requestDto.Email
+                    Email = registerDto.Email,
+                    UserName = registerDto.Email
                 };
 
 
-                var isCreated = await _userManager.CreateAsync(newUser, requestDto.Password);
+                var isCreated = await _userManager.CreateAsync(newUser, registerDto.Password);
 
                 if(isCreated.Succeeded)
                 {
@@ -77,6 +77,38 @@ namespace JwtAuth.Controllers
             return BadRequest();
         }
 
+
+
+        [HttpPost]
+        [Route("Login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequestDto loginDto)
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByEmailAsync(loginDto.Email);
+
+                if (user == null)
+                    return BadRequest();
+
+
+                var isCorrectPassword = await _userManager.CheckPasswordAsync(user, loginDto.Password);
+
+                if (!isCorrectPassword)
+                    return BadRequest();
+
+
+				var token = GenerateJwtToken(user);
+
+				return Ok(new AuthResult()
+				{
+					Result = true,
+					Token = token
+				});
+
+			}
+
+            return BadRequest();
+        }
 
 
 
