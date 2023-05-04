@@ -2,6 +2,7 @@
 using System.Security.Claims;
 using System.Text;
 using JwtAuth.DTOs;
+using JwtAuth.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -14,10 +15,15 @@ namespace JwtAuth.Controllers
     {
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IConfiguration _configuration;
-        public AuthenticationController(UserManager<IdentityUser> userManager, IConfiguration configuration)
+        private readonly AppDbContext _context;
+        private readonly TokenValidationParameters _tokenValidationParameters;
+        public AuthenticationController(UserManager<IdentityUser> userManager, IConfiguration configuration,
+            AppDbContext context, TokenValidationParameters tokenValidationParameters)
         {
             _userManager = userManager;
             _configuration = configuration;
+            _context = context;
+            _tokenValidationParameters = tokenValidationParameters;
         }
 
 
@@ -55,13 +61,8 @@ namespace JwtAuth.Controllers
                 if(isCreated.Succeeded)
                 {
                     // Generate the token
-                    var token = GenerateJwtToken(newUser);
-
-                    return Ok(new AuthResult()
-                    {
-                        Result = true,
-                        Token = token
-                    });
+                    var result = await GenerateJwtToken(newUser);
+                    return Ok(result);
                 }
 
 
@@ -96,14 +97,8 @@ namespace JwtAuth.Controllers
                     return BadRequest();
 
 
-				var token = GenerateJwtToken(user);
-
-				return Ok(new AuthResult()
-				{
-					Result = true,
-					Token = token
-				});
-
+				var result = await GenerateJwtToken(user);
+                return Ok(result);
 			}
 
             return BadRequest();
@@ -113,7 +108,7 @@ namespace JwtAuth.Controllers
 
 
         // Generate token
-        private string GenerateJwtToken(IdentityUser user)
+        private async Task<AuthResult> GenerateJwtToken(IdentityUser user)
         {
             var jwtTokenHandler = new JwtSecurityTokenHandler();
 
@@ -139,9 +134,39 @@ namespace JwtAuth.Controllers
             var token = jwtTokenHandler.CreateToken(tokenDescriptor);
             var jwtToken = jwtTokenHandler.WriteToken(token);
 
-            return jwtToken;
+
+            var refreshToken = new RefreshToken()
+            {
+                JwtId = token.Id,
+                Token = RandomStringGeneration(20),
+                AddedDate = DateTime.UtcNow,
+                ExpiryDate = DateTime.UtcNow.AddMonths(6),
+                IsRevoked = false,
+                IsUsed = false,
+                UserId = user.Id
+            };
+
+            await _context.RefershTokens.AddAsync(refreshToken);
+            await _context.SaveChangesAsync();
+
+
+            return new AuthResult()
+            {
+                Token = jwtToken,
+                RefreshToken = refreshToken.Token,
+                Result = true
+            };
+
         }
 
+
+        // Generate random string to be the refresh token
+        private string RandomStringGeneration(int length)
+        {
+            var random = new Random();
+            var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyz*-+)(&^%$#@!~";
+            return new string(Enumerable.Repeat(chars, length).Select(s => s[random.Next(s.Length)]).ToArray());
+        }
 
     }
 }

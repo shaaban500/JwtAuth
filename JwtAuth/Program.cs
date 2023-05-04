@@ -29,6 +29,7 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.Requ
 
 // JWT Configurations
 builder.Services.Configure<JwtConfig>(builder.Configuration.GetSection("JwtConfig"));
+
 var key = Encoding.ASCII.GetBytes(builder.Configuration.GetSection("JwtConfig:Secret").Value);
 
 var tokenValidationParameters =  new TokenValidationParameters()
@@ -54,6 +55,7 @@ builder.Services.AddAuthentication(options =>
     jwt.TokenValidationParameters = tokenValidationParameters;
 });
 
+builder.Services.AddSingleton(tokenValidationParameters);
 
 
 #endregion
