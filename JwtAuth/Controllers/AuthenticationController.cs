@@ -5,6 +5,7 @@ using JwtAuth.DTOs;
 using JwtAuth.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 namespace JwtAuth.Controllers
@@ -106,6 +107,27 @@ namespace JwtAuth.Controllers
 
 
 
+        [HttpPost]
+        [Route("RefreshToken")]
+        public async Task<IActionResult> RefreshToken([FromBody] TokenRequest tokenRequest)
+        {
+            if(ModelState.IsValid)
+            {
+                var result = await VerifyAndGenerateToken(tokenRequest);
+
+                if(result == null)
+                    return BadRequest(new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } });
+
+                return Ok(result);
+
+            }
+
+            return BadRequest(new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } });
+        }
+
+
+
+
 
         // Generate token
         private async Task<AuthResult> GenerateJwtToken(IdentityUser user)
@@ -168,5 +190,73 @@ namespace JwtAuth.Controllers
             return new string(Enumerable.Repeat(chars, length).Select(s => s[random.Next(s.Length)]).ToArray());
         }
 
+
+
+
+        // verify token request
+        private async Task<AuthResult> VerifyAndGenerateToken(TokenRequest tokenRequest)
+        {
+            var jwtTokenHandler = new JwtSecurityTokenHandler();
+
+            try
+            {
+                _tokenValidationParameters.ValidateLifetime = false; // for test
+
+                var tokenVerification = jwtTokenHandler.ValidateToken(tokenRequest.Token, _tokenValidationParameters, out var validatedToken);
+
+                if(validatedToken is JwtSecurityToken jwtSecurityToken)
+                {
+                    var result = jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256);
+
+                    if (result == false)
+                        return null;
+                }
+
+                var utcExpiryDate = long.Parse(tokenVerification.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Exp).Value);
+
+                var expiryDate = UnixTimeStampDateTime(utcExpiryDate);
+                if(expiryDate > DateTime.Now)
+                {
+                    return new AuthResult() { Result = false, Errors = new List<string>() { "Expired token" } };
+                }
+
+                var storedToken = await _context.RefershTokens.FirstOrDefaultAsync(x => x.Token == tokenRequest.RefreshToken);
+
+                if(storedToken == null)
+                    return new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } };
+
+                if(storedToken.IsUsed)
+                    return new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } };
+
+                if (storedToken.IsRevoked)
+                    return new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } };
+
+                var jti = tokenVerification.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti).Value;
+                if(storedToken.JwtId != jti)
+                    return new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } };
+
+                if(storedToken.ExpiryDate < DateTime.UtcNow)
+                    return new AuthResult() { Result = false, Errors = new List<string>() { "Invalid token" } };
+
+                storedToken.IsUsed = true;
+                _context.RefershTokens.Update(storedToken);
+                await _context.SaveChangesAsync();
+
+                var dbUser = await _userManager.FindByIdAsync(storedToken.UserId);
+                return await GenerateJwtToken(dbUser);
+
+            }
+            catch (Exception e)
+            {
+                return new AuthResult() { Result = false, Errors = new List<string>() { "Server Error" } };
+            }
+        }
+
+        private DateTime UnixTimeStampDateTime(long unixTimeStamp)
+        {
+            var dateTimeVal = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            dateTimeVal = dateTimeVal.AddSeconds(unixTimeStamp).ToUniversalTime();
+            return dateTimeVal;
+        }
     }
 }
